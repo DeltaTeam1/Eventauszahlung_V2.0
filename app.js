@@ -1,453 +1,111 @@
-const DATA_SHEET_URL = [
-  "https://docs.google.com/spreadsheets/d/",
-  "13IjN7-7c9iwyciluIfDZNfCHFl7TlOMoHP8l00n77_E",
-  "/gviz/tq?sheet=data_auszahlung",
-].join("");
-const DATA_SHEET_HASH = "47bc3188da412e6a749fc37070791332712cc90969213a9c2f60fb3681f3420c";
-const DATA_SHEET_NAME = "data_auszahlung";
-const DATABASE_API_URL = String(window.APP_CONFIG?.googleAppsScriptUrl ?? "").trim();
+const EVENT_PARTICIPANTS_API_URL = "https://worker.statescloud.de/api/v1/data/event-participants.json?key=fmk_EQyxibxpvsjCeJKVjkr23K1aB34M6_6j&fields=memberName,note,member.field.passId,eventTitle,member.discordId,eventLogId,eventStartsAt&dateFormat=sheets&tz=Europe/Berlin";
+const PARTICIPATION_PAYOUT = 5000;
+const PERSON_BONUS = 500;
+const API_PAGE_SIZE = 1000;
+const BERLIN_TIME_ZONE = "Europe/Berlin";
+const GOTA_PASSWORD_HASH = "0b155a8e953642f2ef3e82781ad19b6b128ea5e77cbd2f841053c46d36529bd4";
 
-const requestForm = document.querySelector("#request-form");
-const recordsBody = document.querySelector("#records-body");
-const recordTemplate = document.querySelector("#record-template");
+const participantBody = document.querySelector("#participant-body");
+const participantTemplate = document.querySelector("#participant-template");
 const emptyState = document.querySelector("#empty-state");
+const emptyStateCopy = document.querySelector("#empty-state-copy");
+const participantSearch = document.querySelector("#participant-search");
+const tableFeedback = document.querySelector("#table-feedback");
+const dataSourceState = document.querySelector("#data-source-state");
+const dataSourceCopy = document.querySelector("#data-source-copy");
+const sourceStatus = document.querySelector("#source-status");
+const refreshButton = document.querySelector("#refresh-data");
+const gotaTrigger = document.querySelector("#gota-trigger");
 const authDialog = document.querySelector("#auth-dialog");
 const authForm = document.querySelector("#auth-form");
 const gotaPassword = document.querySelector("#gota-password");
-const formFeedback = document.querySelector("#form-feedback");
 const authFeedback = document.querySelector("#auth-feedback");
-const securityState = document.querySelector("#security-state");
-const securityCopy = document.querySelector("#security-copy");
-const gotaTrigger = document.querySelector("#gota-trigger");
-const paymentType = document.querySelector("#payment-type");
-const recipientInput = document.querySelector("#recipient-input");
-const recipientList = document.querySelector("#recipient-list");
-const amountOutput = document.querySelector("#amount");
-const calculationDetail = document.querySelector("#calculation-detail");
-const dataSourceState = document.querySelector("#data-source-state");
-const dataSourceCopy = document.querySelector("#data-source-copy");
-const databaseState = document.querySelector("#database-state");
+const dailySection = document.querySelector("#gota-section");
+const dailyDate = document.querySelector("#daily-date");
+const dailyDateHeading = document.querySelector("#daily-date-heading");
+const dailyEventBody = document.querySelector("#daily-event-body");
+const dailyEventTemplate = document.querySelector("#daily-event-template");
+const dailyEmptyState = document.querySelector("#daily-empty-state");
+const dailyEmptyStateCopy = document.querySelector("#daily-empty-state-copy");
+const dailyEventCount = document.querySelector("#daily-event-count");
+const dailyParticipantCount = document.querySelector("#daily-participant-count");
+const dailyTotal = document.querySelector("#daily-total");
+const expoButton = document.querySelector("#expo-button");
+const expoOutput = document.querySelector("#expo-output");
+const copyExpoButton = document.querySelector("#copy-expo");
+const expoFeedback = document.querySelector("#expo-feedback");
 
+let earnings = [];
+let eventCount = 0;
+let attendanceCount = 0;
+let totalPayout = 0;
+let isLoading = false;
+let allParticipantRows = [];
+let dailyReports = [];
 let isGotaAuthorized = false;
-let payoutCatalog = [];
-let recipients = [];
-let records = [];
-let gotaAuthorizationCode = "";
-
-function getRecords() {
-  return records;
-}
-
-function setRecords(nextRecords) {
-  records = Array.isArray(nextRecords) ? nextRecords : [];
-}
-
-function setDatabaseState(state, isError = false) {
-  databaseState.textContent = `DATENBANK: ${state}`;
-  databaseState.classList.toggle("source-error", isError);
-}
-
-function ensureDatabaseConfigured() {
-  if (DATABASE_API_URL) {
-    return;
-  }
-
-  setDatabaseState("NICHT KONFIGURIERT", true);
-  throw new Error("Die Google-Apps-Script-Web-App ist noch nicht in app-config.js eingetragen.");
-}
-
-async function callDatabase(action, payload = {}) {
-  ensureDatabaseConfigured();
-  const response = await fetch(DATABASE_API_URL, {
-    method: "POST",
-    redirect: "follow",
-    headers: { "Content-Type": "text/plain;charset=UTF-8" },
-    body: JSON.stringify({ action, ...payload }),
-  });
-
-  const responseText = await response.text();
-  let result;
-  try {
-    result = JSON.parse(responseText);
-  } catch {
-    throw new Error("Die Google-Apps-Script-Web-App hat keine lesbare Antwort geliefert.");
-  }
-
-  if (!response.ok || !result.ok) {
-    throw new Error(result.error || "Die Datenbankaktion ist fehlgeschlagen.");
-  }
-
-  return result;
-}
-
-async function loadRecordsFromDatabase() {
-  if (!isGotaAuthorized || !gotaAuthorizationCode) {
-    setRecords([]);
-    renderRecords();
-    return;
-  }
-
-  const result = await callDatabase("list", { password: gotaAuthorizationCode });
-  setRecords(result.records);
-  renderRecords();
-}
 
 function formatCurrency(amount) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
+    maximumFractionDigits: 0,
   }).format(amount);
 }
 
-function createRecordId() {
-  const suffix = crypto.getRandomValues(new Uint32Array(1))[0].toString(16).toUpperCase().slice(-5);
-  return `FZ-${new Date().getFullYear()}-${suffix}`;
+function formatNumber(value) {
+  return new Intl.NumberFormat("de-DE").format(value);
 }
 
-function setFeedback(target, message, isError = false) {
-  target.textContent = message;
-  target.classList.toggle("error", isError);
+function getText(value) {
+  return String(value ?? "").trim();
 }
 
-function getRecordRecipients(record) {
-  if (Array.isArray(record.recipients)) {
-    return record.recipients;
-  }
+function getBerlinDateKey() {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: BERLIN_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const dateParts = Object.fromEntries(parts
+    .filter((part) => part.type !== "literal")
+    .map((part) => [part.type, part.value]));
 
-  return typeof record.recipient === "string" && record.recipient ? [record.recipient] : [];
+  return `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
 }
 
-function getRecordReferences(record) {
-  if (Array.isArray(record.references)) {
-    return record.references;
-  }
-
-  return typeof record.reference === "string" && record.reference ? [record.reference] : [];
+function formatDateKey(dateKey) {
+  const [year, month, day] = dateKey.split("-");
+  return `${day}.${month}.${year}`;
 }
 
-function extractHttpLinks(text) {
-  const matches = String(text ?? "").match(/https?:\/\/[^\s<>"]+/gi) ?? [];
-  const uniqueLinks = new Set();
-
-  matches.forEach((match) => {
-    try {
-      const url = new URL(match.replace(/[),.;]+$/, ""));
-      if (url.protocol === "https:" || url.protocol === "http:") {
-        uniqueLinks.add(url.href);
-      }
-    } catch {
-      return;
-    }
-  });
-
-  return [...uniqueLinks];
+function isOnOrAfterReportStart(row, reportStartDate) {
+  const eventDate = getText(row.eventStartsAt).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(eventDate) && eventDate >= reportStartDate;
 }
 
-function setDataSourceState(state, copy, isError = false) {
-  dataSourceState.textContent = `DATENBLATT: ${state}`;
-  dataSourceCopy.textContent = copy;
-  dataSourceState.classList.toggle("source-error", isError);
+function getEventDateKey(eventStartsAt) {
+  const eventDate = getText(eventStartsAt).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(eventDate) ? eventDate : "";
 }
 
-function parsePayoutAmount(value) {
-  if (typeof value === "number") {
-    return value;
-  }
-
-  const normalized = String(value ?? "").replace(/[^0-9,.-]/g, "").replace(/,/g, "");
-  const amount = Number.parseFloat(normalized);
-  return Number.isFinite(amount) ? amount : 0;
+function formatEventStart(eventStartsAt) {
+  const value = getText(eventStartsAt);
+  const dateKey = getEventDateKey(value);
+  const time = value.slice(11, 16);
+  return dateKey && /^\d{2}:\d{2}$/.test(time) ? `${formatDateKey(dateKey)} · ${time}` : "--";
 }
 
-function parseDataSheet(responseText) {
-  const start = responseText.indexOf("{");
-  const end = responseText.lastIndexOf("}");
-  if (start < 0 || end < start) {
-    throw new Error("Das Datenblatt hat kein lesbares Tabellenformat geliefert.");
-  }
-
-  const table = JSON.parse(responseText.slice(start, end + 1)).table;
-  return (table.rows ?? [])
-    .map((row) => {
-      const cells = row.c ?? [];
-      const valueAt = (index) => cells[index]?.v ?? cells[index]?.f ?? "";
-      const label = String(valueAt(0)).trim();
-      const abbreviation = String(valueAt(1)).trim();
-
-      return {
-        id: `${label}|${abbreviation}`,
-        label,
-        abbreviation,
-        payouts: {
-          Teilnahme: parsePayoutAmount(valueAt(2)),
-          "Zusatz pro Soldat": parsePayoutAmount(valueAt(3)),
-          Gewonnen: parsePayoutAmount(valueAt(4)),
-          Verloren: parsePayoutAmount(valueAt(5)),
-        },
-      };
-    })
-    .filter((entry) => entry.label && entry.abbreviation);
-}
-
-function populatePayoutTypes() {
-  paymentType.replaceChildren(new Option("Auswaehlen", ""));
-  payoutCatalog.forEach((entry) => {
-    paymentType.add(new Option(`${entry.label} (${entry.abbreviation})`, entry.id));
-  });
-  paymentType.disabled = payoutCatalog.length === 0;
-}
-
-async function loadPayoutCatalog() {
-  setDataSourceState("LADE", "SHEET / NUR LESEN");
-  paymentType.disabled = true;
-  paymentType.replaceChildren(new Option("Datenblatt wird geladen", ""));
-
-  try {
-    if ((await hashValue(DATA_SHEET_URL)) !== DATA_SHEET_HASH) {
-      throw new Error("Die Datenquellenpruefung ist fehlgeschlagen.");
-    }
-
-    const response = await fetch(DATA_SHEET_URL, { method: "GET", cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`Datenblatt nicht erreichbar (${response.status}).`);
-    }
-
-    payoutCatalog = parseDataSheet(await response.text());
-    if (payoutCatalog.length === 0) {
-      throw new Error("Im Datenblatt wurden keine Auszahlungsarten gefunden.");
-    }
-
-    populatePayoutTypes();
-    setDataSourceState("BEREIT", `${DATA_SHEET_NAME.toUpperCase()} / NUR LESEN`);
-  } catch (error) {
-    payoutCatalog = [];
-    setDataSourceState("NICHT ERREICHBAR", "Keine lokale Auszahlungsberechnung", true);
-    setFeedback(formFeedback, error.message, true);
-  }
-
-  updateAmountPreview();
-}
-
-function getSelectedReferences() {
-  return [...document.querySelectorAll('input[name="reference"]:checked')].map((input) => input.value);
-}
-
-function getSelectedPayoutType() {
-  return payoutCatalog.find((entry) => entry.id === paymentType.value) ?? null;
-}
-
-function calculateAmount() {
-  const selectedType = getSelectedPayoutType();
-  const selectedReferences = getSelectedReferences();
-  if (!selectedType || selectedReferences.length === 0) {
-    return { amountPerRecipient: 0, total: 0, details: [] };
-  }
-
-  const recipientCount = recipients.length;
-  const details = selectedReferences.map((reference) => {
-    const sourceAmount = selectedType.payouts[reference] ?? 0;
-    const multiplier = reference === "Zusatz pro Soldat" ? recipientCount : 1;
-    const amountPerRecipient = sourceAmount * multiplier;
-    return {
-      reference,
-      sourceAmount,
-      multiplier,
-      amountPerRecipient,
-      total: amountPerRecipient * recipientCount,
-    };
-  });
-
-  const amountPerRecipient = details.reduce((total, detail) => total + detail.amountPerRecipient, 0);
-
-  return {
-    amountPerRecipient,
-    total: details.reduce((total, detail) => total + detail.total, 0),
-    details,
-  };
-}
-
-function updateAmountPreview() {
-  const calculation = calculateAmount();
-  amountOutput.textContent = formatCurrency(calculation.amountPerRecipient);
-
-  if (!getSelectedPayoutType()) {
-    calculationDetail.textContent = "Auszahlungsart aus Spalte A/B waehlen.";
-    return;
-  }
-
-  if (calculation.details.length === 0) {
-    calculationDetail.textContent = "Mindestens eine Referenz waehlen.";
-    return;
-  }
-
-  const payoutBreakdown = calculation.details
-    .map((detail) => detail.reference === "Zusatz pro Soldat" && recipients.length > 0
-      ? `Zusatz pro Person: ${formatCurrency(detail.sourceAmount)} x ${detail.multiplier} = ${formatCurrency(detail.amountPerRecipient)} je Empfaenger`
-      : `${detail.reference}: ${formatCurrency(detail.amountPerRecipient)}`)
-    .join(" + ");
-  calculationDetail.textContent = recipients.length > 0
-    ? `${payoutBreakdown} | Einzelbetrag: ${formatCurrency(calculation.amountPerRecipient)} pro Empfaenger | ${recipients.length} Einzelvorgaenge: ${formatCurrency(calculation.total)} gesamt`
-    : `${payoutBreakdown} | Einzelbetrag: ${formatCurrency(calculation.amountPerRecipient)} pro Empfaenger`;
-}
-
-function renderRecipients() {
-  recipientList.replaceChildren();
-  recipients.forEach((recipient) => {
-    const token = document.createElement("span");
-    token.className = "recipient-token";
-    token.textContent = recipient;
-
-    const removeButton = document.createElement("button");
-    removeButton.className = "token-remove";
-    removeButton.type = "button";
-    removeButton.ariaLabel = `${recipient} entfernen`;
-    removeButton.textContent = "x";
-    removeButton.addEventListener("click", () => {
-      recipients = recipients.filter((item) => item !== recipient);
-      renderRecipients();
-      updateAmountPreview();
-    });
-
-    token.append(removeButton);
-    recipientList.append(token);
-  });
-}
-
-function addRecipients(value) {
-  const candidateNumbers = value
-    .split(/[;,\n]+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  const invalidNumber = candidateNumbers.find((item) => !/^[A-Za-z0-9-]{1,32}$/.test(item));
-  if (invalidNumber) {
-    setFeedback(formFeedback, `Reisepassnummer "${invalidNumber}" ist ungueltig.`, true);
-    return false;
-  }
-
-  candidateNumbers.forEach((item) => {
-    if (!recipients.includes(item)) {
-      recipients.push(item);
-    }
-  });
-  recipientInput.value = "";
-  renderRecipients();
-  updateAmountPreview();
-  return true;
-}
-
-function updateMetrics(records) {
-  const pendingRecords = records.filter((record) => record.status === "offen");
-  const approvedRecords = records.filter((record) => record.status === "freigegeben");
-  const pendingTotal = pendingRecords.reduce((total, record) => total + record.amount, 0);
-
-  document.querySelector("#pending-count").textContent = pendingRecords.length;
-  document.querySelector("#pending-total").textContent = formatCurrency(pendingTotal);
-  document.querySelector("#approved-count").textContent = approvedRecords.length;
-  document.querySelector("#sidebar-count").textContent = records.length;
-}
-
-function renderEvidence(record, evidenceCell) {
-  const links = Array.isArray(record.links) ? record.links : extractHttpLinks(record.purpose);
-  if (links.length === 0) {
-    evidenceCell.textContent = "--";
-    return;
-  }
-
-  links.forEach((link, index) => {
-    const anchor = document.createElement("a");
-    anchor.className = "evidence-link";
-    anchor.href = link;
-    anchor.target = "_blank";
-    anchor.rel = "noopener noreferrer";
-    anchor.textContent = `LINK ${index + 1}`;
-    evidenceCell.append(anchor);
-  });
-}
-
-function renderRecords() {
-  const records = getRecords();
-  recordsBody.replaceChildren();
-  emptyState.hidden = records.length > 0;
-
-  records.forEach((record) => {
-    const row = recordTemplate.content.cloneNode(true);
-    row.querySelector(".record-id").textContent = record.id;
-    row.querySelector(".record-recipient").textContent = getRecordRecipients(record).join(", ");
-    row.querySelector(".record-type").textContent = record.paymentType;
-    row.querySelector(".record-reference").textContent = getRecordReferences(record).join(" / ");
-    row.querySelector(".record-amount").textContent = formatCurrency(record.amount);
-    renderEvidence(record, row.querySelector(".record-evidence"));
-
-    const status = row.querySelector(".record-status");
-    const statusTag = document.createElement("span");
-    statusTag.className = `status-tag ${record.status === "freigegeben" ? "status-approved" : "status-pending"}`;
-    statusTag.textContent = record.status === "freigegeben" ? "FREIGEGEBEN" : "OFFEN";
-    status.append(statusTag);
-
-    const actionCell = row.querySelector(".record-action");
-    if (isGotaAuthorized) {
-      const actions = document.createElement("div");
-      actions.className = "admin-actions";
-
-      if (record.status === "offen") {
-        const approveButton = document.createElement("button");
-        approveButton.className = "approve-button";
-        approveButton.type = "button";
-        approveButton.textContent = "Freigeben";
-        approveButton.addEventListener("click", () => approveRecord(record.id));
-        actions.append(approveButton);
-      }
-
-      const deleteButton = document.createElement("button");
-      deleteButton.className = "delete-button";
-      deleteButton.type = "button";
-      deleteButton.ariaLabel = `Vorgang ${record.id} loeschen`;
-      deleteButton.title = "Vorgang loeschen";
-      const deleteIcon = document.createElement("i");
-      deleteIcon.setAttribute("data-lucide", "trash-2");
-      deleteIcon.setAttribute("aria-hidden", "true");
-      deleteButton.append(deleteIcon);
-      deleteButton.addEventListener("click", () => deleteRecord(record.id));
-      actions.append(deleteButton);
-      actionCell.append(actions);
-    } else {
-      actionCell.textContent = "GOTA";
-    }
-
-    recordsBody.append(row);
-  });
-
-  updateMetrics(records);
-  lucide.createIcons();
-}
-
-async function approveRecord(recordId) {
-  if (!isGotaAuthorized) {
-    return;
-  }
-
-  try {
-    const result = await callDatabase("approve", { recordId, password: gotaAuthorizationCode });
-    setRecords(getRecords().map((record) => record.id === recordId ? result.record : record));
-    renderRecords();
-  } catch (error) {
-    setFeedback(formFeedback, error.message, true);
-  }
-}
-
-async function deleteRecord(recordId) {
-  if (!isGotaAuthorized || !window.confirm(`Vorgang ${recordId} endgueltig loeschen?`)) {
-    return;
-  }
-
-  try {
-    await callDatabase("delete", { recordId, password: gotaAuthorizationCode });
-    setRecords(getRecords().filter((record) => record.id !== recordId));
-    renderRecords();
-  } catch (error) {
-    setFeedback(formFeedback, error.message, true);
-  }
+function formatDailyHeading(dateKey) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return new Intl.DateTimeFormat("de-DE", {
+    timeZone: "UTC",
+    weekday: "long",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date).replace(",", "");
 }
 
 async function hashValue(value) {
@@ -455,145 +113,529 @@ async function hashValue(value) {
     throw new Error("Die Browser-Verschluesselung ist nicht verfuegbar.");
   }
 
-  const data = new TextEncoder().encode(value);
-  const buffer = await crypto.subtle.digest("SHA-256", data);
+  const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(buffer), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function updateAuthorizationState() {
-  securityState.textContent = isGotaAuthorized ? "GOTA AUTORISIERT" : "GOTA GESPERRT";
-  securityCopy.textContent = isGotaAuthorized ? "Freigaben aktiv in dieser Sitzung" : "Freigaben nicht verfuegbar";
-  document.querySelector(".security-panel svg").setAttribute("data-lucide", isGotaAuthorized ? "shield-check" : "lock-keyhole");
-  gotaTrigger.querySelector("span").textContent = isGotaAuthorized ? "GOTA AKTIV" : "GOTA-ZUGANG";
-  if (!isGotaAuthorized) {
-    gotaAuthorizationCode = "";
-    setRecords([]);
-  }
-  lucide.createIcons();
-  renderRecords();
+function setDataSourceState(state, copy, isError = false) {
+  dataSourceState.textContent = `DATENQUELLE: ${state}`;
+  dataSourceCopy.textContent = copy;
+  dataSourceState.classList.toggle("source-error", isError);
 }
 
-requestForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
+function setSourceStatus(label, isError = false) {
+  sourceStatus.textContent = label;
+  sourceStatus.parentElement.classList.toggle("status-error", isError);
+}
 
-  if (!requestForm.checkValidity()) {
-    requestForm.reportValidity();
+function setLoading(loading) {
+  isLoading = loading;
+  refreshButton.disabled = loading;
+  refreshButton.classList.toggle("is-loading", loading);
+}
+
+function normalizeParticipant(row) {
+  const name = getText(row.memberName) || "Unbekannt";
+  const passId = getText(row["member.field.passId"]);
+  const discordId = getText(row["member.discordId"]);
+  const eventLogId = getText(row.eventLogId);
+  const eventTitle = getText(row.eventTitle) || "Ohne Eventtitel";
+  const eventStartsAt = getText(row.eventStartsAt);
+
+  if (!eventLogId || (!discordId && !passId && name === "Unbekannt")) {
+    return null;
+  }
+
+  const identity = discordId
+    ? `discord:${discordId}`
+    : passId
+      ? `pass:${passId}`
+      : `name:${name.toLocaleLowerCase("de-DE")}`;
+
+  return { identity, name, passId, discordId, eventLogId, eventTitle, eventStartsAt };
+}
+
+function groupEventsByLogId(rows) {
+  const eventsByLogId = new Map();
+
+  rows.forEach((row) => {
+    const participant = normalizeParticipant(row);
+    if (!participant) {
+      return;
+    }
+
+    let event = eventsByLogId.get(participant.eventLogId);
+    if (!event) {
+      event = {
+        id: participant.eventLogId,
+        title: participant.eventTitle,
+        startsAt: participant.eventStartsAt,
+        participants: new Map(),
+      };
+      eventsByLogId.set(participant.eventLogId, event);
+    }
+
+    if (!event.startsAt && participant.eventStartsAt) {
+      event.startsAt = participant.eventStartsAt;
+    }
+
+    if (!event.participants.has(participant.identity)) {
+      event.participants.set(participant.identity, participant);
+    }
+  });
+
+  return eventsByLogId;
+}
+
+function calculateEventPayout(event) {
+  const participantCount = event.participants.size;
+  const bonusAmount = participantCount * PERSON_BONUS;
+  const payoutPerParticipant = PARTICIPATION_PAYOUT + bonusAmount;
+
+  return {
+    participantCount,
+    bonusAmount,
+    payoutPerParticipant,
+    total: payoutPerParticipant * participantCount,
+  };
+}
+
+function buildEarnings(rows) {
+  const eventsByLogId = groupEventsByLogId(rows);
+  const peopleByIdentity = new Map();
+  let calculatedTotal = 0;
+
+  eventsByLogId.forEach((event) => {
+    const payout = calculateEventPayout(event);
+
+    event.participants.forEach((participant) => {
+      let person = peopleByIdentity.get(participant.identity);
+      if (!person) {
+        person = {
+          name: participant.name,
+          passId: participant.passId,
+          discordId: participant.discordId,
+          events: [],
+          participationAmount: 0,
+          bonusAmount: 0,
+          total: 0,
+        };
+        peopleByIdentity.set(participant.identity, person);
+      }
+
+      if (!person.passId && participant.passId) {
+        person.passId = participant.passId;
+      }
+
+      person.events.push({
+        id: event.id,
+        title: event.title,
+        startsAt: event.startsAt,
+        participantCount: payout.participantCount,
+      });
+      person.participationAmount += PARTICIPATION_PAYOUT;
+      person.bonusAmount += payout.bonusAmount;
+      person.total += payout.payoutPerParticipant;
+    });
+
+    calculatedTotal += payout.total;
+  });
+
+  const people = [...peopleByIdentity.values()]
+    .map((person) => ({
+      ...person,
+      eventTitles: [...new Set(person.events.map((event) => event.title))],
+    }))
+    .sort((left, right) => right.total - left.total || left.name.localeCompare(right.name, "de"));
+
+  return {
+    people,
+    eventCount: eventsByLogId.size,
+    attendanceCount: [...eventsByLogId.values()].reduce((total, event) => total + event.participants.size, 0),
+    totalPayout: calculatedTotal,
+  };
+}
+
+function buildDailyReports(rows) {
+  const reportsByDate = new Map();
+
+  groupEventsByLogId(rows).forEach((event) => {
+    const dateKey = getEventDateKey(event.startsAt);
+    if (!dateKey) {
+      return;
+    }
+
+    let report = reportsByDate.get(dateKey);
+    if (!report) {
+      report = {
+        dateKey,
+        events: [],
+        peopleByIdentity: new Map(),
+        total: 0,
+      };
+      reportsByDate.set(dateKey, report);
+    }
+
+    const payout = calculateEventPayout(event);
+    const dailyEvent = {
+      id: event.id,
+      title: event.title,
+      startsAt: event.startsAt,
+      participantCount: payout.participantCount,
+      payoutPerParticipant: payout.payoutPerParticipant,
+      total: payout.total,
+    };
+
+    report.events.push(dailyEvent);
+    report.total += payout.total;
+
+    event.participants.forEach((participant) => {
+      let person = report.peopleByIdentity.get(participant.identity);
+      if (!person) {
+        person = {
+          name: participant.name,
+          discordId: participant.discordId,
+          total: 0,
+          events: [],
+        };
+        report.peopleByIdentity.set(participant.identity, person);
+      }
+
+      person.total += payout.payoutPerParticipant;
+      person.events.push(dailyEvent);
+    });
+  });
+
+  return [...reportsByDate.values()]
+    .map((report) => ({
+      dateKey: report.dateKey,
+      events: report.events.sort((left, right) => left.startsAt.localeCompare(right.startsAt)),
+      people: [...report.peopleByIdentity.values()]
+        .sort((left, right) => right.total - left.total || left.name.localeCompare(right.name, "de")),
+      participantCount: report.peopleByIdentity.size,
+      total: report.total,
+    }))
+    .sort((left, right) => right.dateKey.localeCompare(left.dateKey));
+}
+
+function buildExpoTemplate(report) {
+  const participantLines = report.people.map((person) => {
+    const recipient = person.discordId
+      ? `<@${person.discordId}>`
+      : `${person.name} (keine Discord-ID)`;
+    return `> ${recipient} - ${formatCurrency(person.total)}`;
+  });
+
+  return [
+    "## --------------------------",
+    "# Eventauszahlung",
+    `### ${formatDailyHeading(report.dateKey)}`,
+    "",
+    `\`\`\`Gesamtauszahlung für den Tag: ${formatCurrency(report.total)}\`\`\``,
+    "",
+    "**Teilnehmer:**",
+    "",
+    ...participantLines,
+  ].join("\n");
+}
+
+function getSearchText(person) {
+  return [
+    person.name,
+    person.passId,
+    person.discordId,
+    ...person.events.flatMap((event) => [event.title, event.startsAt]),
+  ]
+    .join(" ")
+    .toLocaleLowerCase("de-DE");
+}
+
+function updateMetrics() {
+  document.querySelector("#participant-count").textContent = formatNumber(earnings.length);
+  document.querySelector("#event-count").textContent = formatNumber(eventCount);
+  document.querySelector("#total-payout").textContent = formatCurrency(totalPayout);
+  document.querySelector("#sidebar-count").textContent = formatNumber(earnings.length);
+  document.querySelector("#sidebar-event-count").textContent = formatNumber(eventCount);
+}
+
+function renderParticipants() {
+  const searchTerm = participantSearch.value.trim().toLocaleLowerCase("de-DE");
+  const visibleEarnings = searchTerm
+    ? earnings.filter((person) => getSearchText(person).includes(searchTerm))
+    : earnings;
+
+  participantBody.replaceChildren();
+  emptyState.hidden = visibleEarnings.length > 0;
+
+  visibleEarnings.forEach((person) => {
+    const row = participantTemplate.content.cloneNode(true);
+    row.querySelector(".participant-name").textContent = person.name;
+    row.querySelector(".participant-discord").textContent = person.discordId ? `DISCORD ${person.discordId}` : "DISCORD --";
+    row.querySelector(".participant-pass-id").textContent = person.passId || "--";
+    row.querySelector(".participant-event-count").textContent = `${formatNumber(person.events.length)} EVENTS`;
+    row.querySelector(".participant-event-titles").textContent = person.events
+      .map((event) => `${event.title} · ${formatEventStart(event.startsAt)}`)
+      .join(", ");
+    row.querySelector(".participant-base").textContent = formatCurrency(person.participationAmount);
+    row.querySelector(".participant-bonus").textContent = formatCurrency(person.bonusAmount);
+    row.querySelector(".participant-total").textContent = formatCurrency(person.total);
+    participantBody.append(row);
+  });
+
+  updateMetrics();
+}
+
+function setFeedback(element, message, isError = false) {
+  element.textContent = message;
+  element.classList.toggle("error", isError);
+}
+
+function getSelectedDailyReport() {
+  return dailyReports.find((report) => report.dateKey === dailyDate.value) ?? null;
+}
+
+function populateDailyDateSelect() {
+  const previousDate = dailyDate.value;
+  dailyDate.replaceChildren();
+
+  if (dailyReports.length === 0) {
+    dailyDate.add(new Option("Keine Eventtage vorhanden", ""));
+    dailyDate.disabled = true;
     return;
   }
 
-  if (!addRecipients(recipientInput.value) || recipients.length === 0) {
-    setFeedback(formFeedback, "Mindestens eine Reisepassnummer erfassen.", true);
-    recipientInput.focus();
+  dailyReports.forEach((report) => {
+    dailyDate.add(new Option(formatDailyHeading(report.dateKey), report.dateKey));
+  });
+  dailyDate.disabled = false;
+
+  const today = getBerlinDateKey();
+  const hasPreviousDate = dailyReports.some((report) => report.dateKey === previousDate);
+  const hasToday = dailyReports.some((report) => report.dateKey === today);
+  dailyDate.value = hasPreviousDate ? previousDate : hasToday ? today : dailyReports[0].dateKey;
+}
+
+function renderDailyView() {
+  if (!isGotaAuthorized) {
     return;
   }
 
-  const selectedReferences = getSelectedReferences();
-  if (selectedReferences.length === 0) {
-    setFeedback(formFeedback, "Mindestens eine Referenz auswaehlen.", true);
+  const report = getSelectedDailyReport();
+  dailyEventBody.replaceChildren();
+  dailyEmptyState.hidden = Boolean(report);
+
+  if (!report) {
+    dailyDateHeading.textContent = "Keine Tagesdaten";
+    dailyEventCount.textContent = "0";
+    dailyParticipantCount.textContent = "0";
+    dailyTotal.textContent = "$0";
+    dailyEmptyStateCopy.textContent = "Fuer den ausgewaehlten Tag liegen keine Events vor.";
+    expoOutput.value = "";
+    expoButton.disabled = true;
+    copyExpoButton.disabled = true;
     return;
   }
 
-  const selectedPayoutType = getSelectedPayoutType();
-  const calculation = calculateAmount();
-  if (!selectedPayoutType || calculation.amountPerRecipient <= 0) {
-    setFeedback(formFeedback, "Der Auszahlungsbetrag konnte nicht aus dem Datenblatt berechnet werden.", true);
-    return;
+  dailyDateHeading.textContent = formatDailyHeading(report.dateKey);
+  dailyEventCount.textContent = formatNumber(report.events.length);
+  dailyParticipantCount.textContent = formatNumber(report.participantCount);
+  dailyTotal.textContent = formatCurrency(report.total);
+  dailyEmptyStateCopy.textContent = "Keine Events fuer diesen Tag gefunden.";
+
+  report.events.forEach((event) => {
+    const row = dailyEventTemplate.content.cloneNode(true);
+    row.querySelector(".daily-event-start").textContent = formatEventStart(event.startsAt);
+    row.querySelector(".daily-event-title").textContent = event.title;
+    row.querySelector(".daily-event-participants").textContent = formatNumber(event.participantCount);
+    row.querySelector(".daily-event-payout").textContent = formatCurrency(event.payoutPerParticipant);
+    row.querySelector(".daily-event-total").textContent = formatCurrency(event.total);
+    dailyEventBody.append(row);
+  });
+
+  expoOutput.value = buildExpoTemplate(report);
+  expoButton.disabled = false;
+  copyExpoButton.disabled = false;
+}
+
+function setGotaAuthorization(authorized) {
+  isGotaAuthorized = authorized;
+  dailySection.hidden = !authorized;
+  gotaTrigger.querySelector("span").textContent = authorized ? "GOTA AKTIV" : "GOTA-ZUGANG";
+  gotaTrigger.title = authorized ? "GOTA-Zugang beenden" : "GOTA-Zugang";
+  gotaTrigger.setAttribute("aria-label", gotaTrigger.title);
+
+  if (authorized) {
+    populateDailyDateSelect();
+    renderDailyView();
+  } else {
+    expoOutput.value = "";
+    expoFeedback.textContent = "";
   }
+}
 
-  const formData = new FormData(requestForm);
-  const purpose = formData.get("purpose").trim();
-  const links = extractHttpLinks(purpose);
-  const newRecords = recipients.map((recipient) => ({
-    recipient,
-    recipientCount: recipients.length,
-    payoutTypeId: selectedPayoutType.id,
-    references: selectedReferences,
-    purpose,
-    links,
-  }));
-
-  try {
-    setFeedback(formFeedback, "Einzelvorgaenge werden in Google Sheets erfasst.");
-    const result = await callDatabase("create", { records: newRecords });
-    setRecords([...result.records, ...getRecords()]);
-    requestForm.reset();
-    recipients = [];
-    renderRecipients();
-    updateAmountPreview();
-    setFeedback(formFeedback, `${result.records.length} Einzelvorgaenge wurden in Google Sheets erfasst.`);
-    renderRecords();
-  } catch (error) {
-    setFeedback(formFeedback, error.message, true);
-  }
-});
-
-recipientInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" || event.key === "," || event.key === ";") {
-    event.preventDefault();
-    addRecipients(recipientInput.value);
-  }
-
-  if (event.key === "Backspace" && !recipientInput.value && recipients.length > 0) {
-    recipients.pop();
-    renderRecipients();
-    updateAmountPreview();
-  }
-});
-
-recipientInput.addEventListener("blur", () => addRecipients(recipientInput.value));
-paymentType.addEventListener("change", updateAmountPreview);
-document.querySelectorAll('input[name="reference"]').forEach((input) => input.addEventListener("change", updateAmountPreview));
-
-gotaTrigger.addEventListener("click", () => {
-  if (isGotaAuthorized) {
-    isGotaAuthorized = false;
-    updateAuthorizationState();
-    return;
-  }
-
-  authFeedback.textContent = "";
-  authDialog.showModal();
-  gotaPassword.focus();
-});
-
-document.querySelector("#dialog-close").addEventListener("click", () => authDialog.close());
-
-authForm.addEventListener("submit", async (event) => {
+async function authorizeGota(event) {
   event.preventDefault();
   setFeedback(authFeedback, "Zugang wird geprueft ...");
 
   try {
-    const enteredPassword = gotaPassword.value;
-    await callDatabase("authorize", { password: enteredPassword });
-    isGotaAuthorized = true;
-    gotaAuthorizationCode = enteredPassword;
+    const enteredHash = await hashValue(gotaPassword.value);
+    if (enteredHash !== GOTA_PASSWORD_HASH) {
+      throw new Error("Zugangscode ist ungueltig.");
+    }
+
     gotaPassword.value = "";
     authDialog.close();
-    updateAuthorizationState();
-    await loadRecordsFromDatabase();
+    setGotaAuthorization(true);
   } catch (error) {
-    setFeedback(authFeedback, error.message, true);
+    setFeedback(authFeedback, error instanceof Error ? error.message : "Zugang konnte nicht geprueft werden.", true);
     gotaPassword.select();
   }
-});
+}
 
-document.querySelector("#refresh-records").addEventListener("click", async () => {
-  try {
-    await loadRecordsFromDatabase();
-  } catch (error) {
-    setFeedback(formFeedback, error.message, true);
+function prepareExpo() {
+  const report = getSelectedDailyReport();
+  if (!report) {
+    return;
   }
-  await loadPayoutCatalog();
+
+  expoOutput.value = buildExpoTemplate(report);
+  setFeedback(expoFeedback, "Discord-Vorlage wurde aktualisiert.");
+}
+
+async function copyExpoTemplate() {
+  if (!expoOutput.value) {
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(expoOutput.value);
+    setFeedback(expoFeedback, "Discord-Vorlage wurde kopiert.");
+  } catch {
+    expoOutput.focus();
+    expoOutput.select();
+    const copied = document.execCommand("copy");
+    setFeedback(expoFeedback, copied ? "Discord-Vorlage wurde kopiert." : "Kopieren nicht verfuegbar.", !copied);
+  }
+}
+
+async function fetchParticipantPage(offset) {
+  const url = new URL(EVENT_PARTICIPANTS_API_URL);
+  url.searchParams.set("limit", String(API_PAGE_SIZE));
+  url.searchParams.set("offset", String(offset));
+
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Teilnehmerdaten nicht erreichbar (${response.status}).`);
+  }
+
+  const payload = await response.json();
+  if (!Array.isArray(payload.rows)) {
+    throw new Error("Die API hat keine lesbaren Teilnehmerdaten geliefert.");
+  }
+
+  return payload;
+}
+
+async function loadParticipantEarnings() {
+  if (isLoading) {
+    return;
+  }
+
+  setLoading(true);
+  setSourceStatus("DATEN WERDEN GELADEN");
+  setDataSourceState("LADE", "EVENT-PARTICIPANTS / NUR LESEN");
+  tableFeedback.textContent = "Teilnehmerdaten werden abgerufen ...";
+
+  try {
+    const rows = [];
+    let offset = 0;
+    let total = 0;
+
+    do {
+      const page = await fetchParticipantPage(offset);
+      const pageRows = page.rows;
+      total = Number.isFinite(Number(page.total)) ? Number(page.total) : offset + pageRows.length;
+      rows.push(...pageRows);
+      offset += pageRows.length;
+
+      if (pageRows.length === 0) {
+        break;
+      }
+    } while (offset < total);
+
+    allParticipantRows = rows;
+    dailyReports = buildDailyReports(allParticipantRows);
+
+    const reportStartDate = getBerlinDateKey();
+    const currentRows = rows.filter((row) => isOnOrAfterReportStart(row, reportStartDate));
+    const calculation = buildEarnings(currentRows);
+    earnings = calculation.people;
+    eventCount = calculation.eventCount;
+    attendanceCount = calculation.attendanceCount;
+    totalPayout = calculation.totalPayout;
+
+    emptyStateCopy.textContent = `Keine Eventteilnahmen ab ${formatDateKey(reportStartDate)} gefunden.`;
+    tableFeedback.textContent = `${formatNumber(attendanceCount)} eindeutige Teilnahmen ab ${formatDateKey(reportStartDate)} aus ${formatNumber(currentRows.length)} API-Datensaetzen berechnet.`;
+    setSourceStatus("API VERBUNDEN");
+    setDataSourceState("BEREIT", `EVENTS AB ${formatDateKey(reportStartDate)} / ${formatNumber(currentRows.length)} DATENSAETZE`);
+    renderParticipants();
+
+    if (isGotaAuthorized) {
+      populateDailyDateSelect();
+      renderDailyView();
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Die Teilnehmerdaten konnten nicht geladen werden.";
+    earnings = [];
+    eventCount = 0;
+    attendanceCount = 0;
+    totalPayout = 0;
+    allParticipantRows = [];
+    dailyReports = [];
+    emptyStateCopy.textContent = message;
+    tableFeedback.textContent = "Die Verdienste konnten nicht aktualisiert werden.";
+    setSourceStatus("API NICHT ERREICHBAR", true);
+    setDataSourceState("NICHT ERREICHBAR", "API / KEINE LOKALEN DATEN", true);
+    renderParticipants();
+
+    if (isGotaAuthorized) {
+      populateDailyDateSelect();
+      renderDailyView();
+    }
+  } finally {
+    setLoading(false);
+  }
+}
+
+participantSearch.addEventListener("input", renderParticipants);
+refreshButton.addEventListener("click", loadParticipantEarnings);
+gotaTrigger.addEventListener("click", () => {
+  if (isGotaAuthorized) {
+    setGotaAuthorization(false);
+    return;
+  }
+
+  setFeedback(authFeedback, "");
+  authDialog.showModal();
+  gotaPassword.focus();
 });
+document.querySelector("#dialog-close").addEventListener("click", () => authDialog.close());
+authForm.addEventListener("submit", authorizeGota);
+dailyDate.addEventListener("change", () => {
+  renderDailyView();
+  expoFeedback.textContent = "";
+});
+expoButton.addEventListener("click", prepareExpo);
+copyExpoButton.addEventListener("click", copyExpoTemplate);
 
 document.querySelector("#current-date").textContent = new Intl.DateTimeFormat("de-DE", {
+  timeZone: BERLIN_TIME_ZONE,
   day: "2-digit",
   month: "short",
   year: "numeric",
 }).format(new Date()).toUpperCase();
-document.querySelector("#session-id").textContent = `SITZUNG ${crypto.getRandomValues(new Uint16Array(1))[0].toString(16).toUpperCase()}`;
 
 lucide.createIcons();
-setDatabaseState(DATABASE_API_URL ? "KONFIGURIERT" : "NICHT KONFIGURIERT", !DATABASE_API_URL);
-renderRecords();
-loadPayoutCatalog();
+setGotaAuthorization(false);
+renderParticipants();
+loadParticipantEarnings();
