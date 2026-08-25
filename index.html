@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Aktuelle Verdienste aus Eventteilnahmen ab heute."
+    />
+    <title>Feldzahlstelle | Verdienste</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="topographic" aria-hidden="true"></div>
+    <main class="app-shell">
+      <header class="command-bar">
+        <a class="brand" href="#verdienste" aria-label="Feldzahlstelle Verdienste">
+          <span class="brand-mark" aria-hidden="true">
+            <i data-lucide="landmark"></i>
+          </span>
+          <span>
+            <strong>FELDZAHLSTELLE</strong>
+            <small>Auszahlungskoordination</small>
+          </span>
+        </a>
+
+        <div class="command-meta">
+          <span class="status-chip">
+            <span class="status-dot"></span>
+            <span id="source-status">DATEN WERDEN GELADEN</span>
+          </span>
+          <time id="current-date" class="date-stamp"></time>
+          <button class="icon-button header-refresh" id="refresh-data" type="button" aria-label="Teilnehmerdaten aktualisieren" title="Teilnehmerdaten aktualisieren">
+            <i data-lucide="refresh-cw" aria-hidden="true"></i>
+          </button>
+          <button class="gota-trigger" id="gota-trigger" type="button" aria-label="GOTA-Zugang" title="GOTA-Zugang">
+            <i data-lucide="shield" aria-hidden="true"></i>
+            <span>GOTA-ZUGANG</span>
+          </button>
+        </div>
+      </header>
+
+      <section class="workspace" aria-label="Auszahlungsuebersicht">
+        <aside class="sidebar">
+          <div class="sector-label">LAGE</div>
+          <nav aria-label="Hauptnavigation">
+            <a class="nav-item active" href="#verdienste">
+              <i data-lucide="users-round" aria-hidden="true"></i>
+              <span>Teilnehmer</span>
+              <strong id="sidebar-count">0</strong>
+            </a>
+            <a class="nav-item" href="#berechnung">
+              <i data-lucide="calculator" aria-hidden="true"></i>
+              <span>Events</span>
+              <strong id="sidebar-event-count">0</strong>
+            </a>
+          </nav>
+
+          <div class="calculation-panel">
+            <i data-lucide="circle-dollar-sign" aria-hidden="true"></i>
+            <div>
+              <strong>AUTOMATISCHE ABRECHNUNG</strong>
+              <span>Keine manuellen Eintraege erforderlich</span>
+            </div>
+          </div>
+
+          <div class="sidebar-footer">
+            <span id="data-source-state">DATENQUELLE: LADE</span>
+            <span id="data-source-copy">EVENT-PARTICIPANTS / NUR LESEN</span>
+            <span>AUSWERTUNG AB HEUTE / BERLIN</span>
+          </div>
+        </aside>
+
+        <div class="main-stage">
+          <section class="briefing" id="berechnung" aria-labelledby="page-title">
+            <div>
+              <p class="eyebrow">Sektor 04 / Zahlungsstelle</p>
+              <h1 id="page-title">Aktuelle Verdienste</h1>
+              <p class="briefing-copy">
+                Die Abrechnung beginnt heute in Berliner Zeit. Jede Teilnahme bringt $5,000; pro gezahlter Person desselben Events kommen $500 hinzu.
+              </p>
+            </div>
+            <div class="briefing-id">
+              <span>VERGUETUNG</span>
+              <strong>$5K + $500</strong>
+            </div>
+          </section>
+
+          <section class="content-grid" id="verdienste">
+            <article class="earnings-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="panel-kicker">LIVE-AUSWERTUNG</p>
+                  <h2>Verdienste nach Eventteilnahme</h2>
+                </div>
+                <span class="open-badge">NUR LESEN</span>
+              </div>
+
+              <div class="rate-summary" aria-label="Auszahlungsregeln">
+                <div class="rate-card">
+                  <span>Teilnahme</span>
+                  <strong>$5,000</strong>
+                  <small>pro Event</small>
+                </div>
+                <div class="rate-card">
+                  <span>Zusatz</span>
+                  <strong>$500</strong>
+                  <small>pro Person im Event</small>
+                </div>
+              </div>
+
+              <label class="search-label" for="participant-search">
+                Teilnehmer suchen
+                <span class="search-control">
+                  <i data-lucide="search" aria-hidden="true"></i>
+                  <input id="participant-search" type="search" autocomplete="off" placeholder="Name, ID oder Event" />
+                </span>
+              </label>
+            </article>
+
+            <aside class="operations-panel" aria-label="Aktueller Stand">
+              <div class="sector-label">AKTUELLER STAND</div>
+              <div class="metric">
+                <span>Teilnehmer</span>
+                <strong id="participant-count">0</strong>
+              </div>
+              <div class="metric">
+                <span>Event-Logs</span>
+                <strong id="event-count">0</strong>
+              </div>
+              <div class="metric">
+                <span>Verdienstsumme</span>
+                <strong id="total-payout">$0</strong>
+              </div>
+              <div class="ops-rule"></div>
+              <p class="ops-note">
+                Angezeigt werden nur Events ab heute in Berliner Zeit. Die Teamgroesse wird je <strong>eventLogId</strong> bestimmt; mehrfache Eintraege derselben Person werden nur einmal gezaehlt.
+              </p>
+            </aside>
+          </section>
+
+          <section class="records-section" aria-labelledby="records-heading">
+            <div class="section-heading">
+              <div>
+                <p class="panel-kicker">MELDEBUCH</p>
+                <h2 id="records-heading">Verdienste aller Teilnehmer</h2>
+              </div>
+              <p id="table-feedback" class="table-feedback" role="status" aria-live="polite"></p>
+            </div>
+            <div class="records-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>TEILNEHMER</th>
+                    <th>REISEPASS</th>
+                    <th>EVENTS / START</th>
+                    <th>TEILNAHME</th>
+                    <th>ZUSATZ</th>
+                    <th>VERDIENT</th>
+                  </tr>
+                </thead>
+                <tbody id="participant-body"></tbody>
+              </table>
+              <div class="empty-state" id="empty-state">
+                <i data-lucide="clipboard-list" aria-hidden="true"></i>
+                <p id="empty-state-copy">Teilnehmerdaten werden geladen.</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="gota-section" id="gota-section" hidden aria-labelledby="gota-heading">
+            <div class="section-heading">
+              <div>
+                <p class="panel-kicker">GESCHUETZTER BEREICH</p>
+                <h2 id="gota-heading">Taegliche Eventauswertung</h2>
+              </div>
+              <span class="gota-badge">GOTA AUTORISIERT</span>
+            </div>
+
+            <div class="gota-grid">
+              <article class="daily-panel">
+                <div class="daily-panel-heading">
+                  <div>
+                    <p class="panel-kicker">TAGESLAGE</p>
+                    <h3 id="daily-date-heading">Tagesauswahl</h3>
+                  </div>
+                  <label class="daily-date-label" for="daily-date">
+                    Auswertungsdatum
+                    <select id="daily-date" aria-label="Auswertungsdatum"></select>
+                  </label>
+                </div>
+
+                <div class="daily-metrics" aria-label="Taegliche Kennzahlen">
+                  <div class="daily-metric">
+                    <span>Events</span>
+                    <strong id="daily-event-count">0</strong>
+                  </div>
+                  <div class="daily-metric">
+                    <span>Teilnehmer</span>
+                    <strong id="daily-participant-count">0</strong>
+                  </div>
+                  <div class="daily-metric">
+                    <span>Tagesauszahlung</span>
+                    <strong id="daily-total">$0</strong>
+                  </div>
+                </div>
+
+                <div class="daily-table-wrap">
+                  <table class="daily-table">
+                    <thead>
+                      <tr>
+                        <th>START</th>
+                        <th>EVENT</th>
+                        <th>TEILNEHMER</th>
+                        <th>JE PERSON</th>
+                        <th>EVENTSUMME</th>
+                      </tr>
+                    </thead>
+                    <tbody id="daily-event-body"></tbody>
+                  </table>
+                  <div class="empty-state" id="daily-empty-state">
+                    <i data-lucide="calendar-x-2" aria-hidden="true"></i>
+                    <p id="daily-empty-state-copy">Fuer den ausgewaehlten Tag liegen keine Events vor.</p>
+                  </div>
+                </div>
+              </article>
+
+              <article class="expo-panel" aria-labelledby="expo-heading">
+                <div class="expo-heading">
+                  <div>
+                    <p class="panel-kicker">DISCORD-VORLAGE</p>
+                    <h3 id="expo-heading">Expo</h3>
+                  </div>
+                </div>
+                <p class="expo-copy">Die Vorlage fasst alle Auszahlungen des ausgewaehlten Tages zusammen und verwendet Discord-Mentions.</p>
+                <textarea id="expo-output" rows="14" readonly aria-label="Vorbereitete Discord-Vorlage"></textarea>
+                <p id="expo-feedback" class="expo-feedback" role="status" aria-live="polite"></p>
+                <button class="expo-button" id="expo-button" type="button" aria-label="Discord-Vorlage erstellen und kopieren" disabled>
+                  <i data-lucide="copy" aria-hidden="true"></i>
+                  Expo erstellen &amp; kopieren
+                </button>
+              </article>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <template id="participant-template">
+      <tr>
+        <td class="participant-person">
+          <strong class="participant-name"></strong>
+          <small class="participant-discord"></small>
+        </td>
+        <td class="participant-pass-id"></td>
+        <td class="participant-events">
+          <span class="participant-event-count"></span>
+          <small class="participant-event-titles"></small>
+        </td>
+        <td class="participant-base"></td>
+        <td class="participant-bonus"></td>
+        <td class="participant-total"></td>
+      </tr>
+    </template>
+
+    <template id="daily-event-template">
+      <tr>
+        <td class="daily-event-start"></td>
+        <td class="daily-event-title"></td>
+        <td class="daily-event-participants"></td>
+        <td class="daily-event-payout"></td>
+        <td class="daily-event-total"></td>
+      </tr>
+    </template>
+
+    <dialog class="auth-dialog" id="auth-dialog" aria-labelledby="auth-title">
+      <form id="auth-form" method="dialog">
+        <button class="dialog-close" id="dialog-close" type="button" aria-label="Zugangsdialog schliessen" title="Schliessen">
+          <i data-lucide="x" aria-hidden="true"></i>
+        </button>
+        <div class="auth-symbol" aria-hidden="true">
+          <i data-lucide="shield-check"></i>
+        </div>
+        <p class="panel-kicker">VERSCHLUESSELTER ZUGANG</p>
+        <h2 id="auth-title">GOTA-Autorisierung</h2>
+        <p class="auth-copy">Der taegliche Verlauf und die Discord-Expo sind nur nach einer Autorisierung verfuegbar.</p>
+        <label class="password-label" for="gota-password">
+          Zugangscode
+          <input id="gota-password" type="password" autocomplete="current-password" inputmode="numeric" maxlength="6" required />
+        </label>
+        <p id="auth-feedback" class="auth-feedback" role="alert"></p>
+        <button class="authorize-button" type="submit">
+          <i data-lucide="key-round" aria-hidden="true"></i>
+          Zugang pruefen
+        </button>
+      </form>
+    </dialog>
+
+    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
