@@ -32,7 +32,6 @@ const dailyParticipantCount = document.querySelector("#daily-participant-count")
 const dailyTotal = document.querySelector("#daily-total");
 const expoButton = document.querySelector("#expo-button");
 const expoOutput = document.querySelector("#expo-output");
-const copyExpoButton = document.querySelector("#copy-expo");
 const expoFeedback = document.querySelector("#expo-feedback");
 
 let earnings = [];
@@ -432,7 +431,6 @@ function renderDailyView() {
     dailyEmptyStateCopy.textContent = "Fuer den ausgewaehlten Tag liegen keine Events vor.";
     expoOutput.value = "";
     expoButton.disabled = true;
-    copyExpoButton.disabled = true;
     return;
   }
 
@@ -454,7 +452,6 @@ function renderDailyView() {
 
   expoOutput.value = buildExpoTemplate(report);
   expoButton.disabled = false;
-  copyExpoButton.disabled = false;
 }
 
 function setGotaAuthorization(authorized) {
@@ -492,29 +489,22 @@ async function authorizeGota(event) {
   }
 }
 
-function prepareExpo() {
+async function createAndCopyExpo() {
   const report = getSelectedDailyReport();
   if (!report) {
     return;
   }
 
   expoOutput.value = buildExpoTemplate(report);
-  setFeedback(expoFeedback, "Discord-Vorlage wurde aktualisiert.");
-}
-
-async function copyExpoTemplate() {
-  if (!expoOutput.value) {
-    return;
-  }
 
   try {
     await navigator.clipboard.writeText(expoOutput.value);
-    setFeedback(expoFeedback, "Discord-Vorlage wurde kopiert.");
+    setFeedback(expoFeedback, "Discord-Vorlage wurde erstellt und kopiert.");
   } catch {
     expoOutput.focus();
     expoOutput.select();
     const copied = document.execCommand("copy");
-    setFeedback(expoFeedback, copied ? "Discord-Vorlage wurde kopiert." : "Kopieren nicht verfuegbar.", !copied);
+    setFeedback(expoFeedback, copied ? "Discord-Vorlage wurde erstellt und kopiert." : "Vorlage wurde erstellt, konnte aber nicht kopiert werden.", !copied);
   }
 }
 
@@ -625,8 +615,7 @@ dailyDate.addEventListener("change", () => {
   renderDailyView();
   expoFeedback.textContent = "";
 });
-expoButton.addEventListener("click", prepareExpo);
-copyExpoButton.addEventListener("click", copyExpoTemplate);
+expoButton.addEventListener("click", createAndCopyExpo);
 
 document.querySelector("#current-date").textContent = new Intl.DateTimeFormat("de-DE", {
   timeZone: BERLIN_TIME_ZONE,
