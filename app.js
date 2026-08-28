@@ -1,8 +1,9 @@
-const EVENT_PARTICIPANTS_API_URL = "https://worker.statescloud.de/api/v1/data/event-participants.json?key=fmk_EQyxibxpvsjCeJKVjkr23K1aB34M6_6j&fields=memberName,note,member.field.passId,eventTitle,member.discordId,eventLogId,eventStartsAt&dateFormat=sheets&tz=Europe/Berlin";
+const EVENT_PARTICIPANTS_API_URL = "https://worker.statescloud.de/api/v1/data/event-participants.json?key=fmk_EQyxibxpvsjCeJKVjkr23K1aB34M6_6j&fields=memberName,member.status,note,member.field.passId,eventTitle,member.discordId,eventLogId,eventStartsAt&dateFormat=sheets&tz=Europe/Berlin";
 const PARTICIPATION_PAYOUT = 5000;
 const PERSON_BONUS = 500;
 const API_PAGE_SIZE = 1000;
 const BERLIN_TIME_ZONE = "Europe/Berlin";
+const ACTIVE_MEMBER_STATUS = "active";
 const GOTA_PASSWORD_HASH = "0b155a8e953642f2ef3e82781ad19b6b128ea5e77cbd2f841053c46d36529bd4";
 
 const participantBody = document.querySelector("#participant-body");
@@ -134,6 +135,7 @@ function setLoading(loading) {
 }
 
 function normalizeParticipant(row) {
+  const memberStatus = getText(row["member.status"]).toLowerCase();
   const name = getText(row.memberName) || "Unbekannt";
   const passId = getText(row["member.field.passId"]);
   const discordId = getText(row["member.discordId"]);
@@ -141,7 +143,7 @@ function normalizeParticipant(row) {
   const eventTitle = getText(row.eventTitle) || "Ohne Eventtitel";
   const eventStartsAt = getText(row.eventStartsAt);
 
-  if (!eventLogId || (!discordId && !passId && name === "Unbekannt")) {
+  if (memberStatus !== ACTIVE_MEMBER_STATUS || !eventLogId || (!discordId && !passId && name === "Unbekannt")) {
     return null;
   }
 
