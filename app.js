@@ -1,6 +1,6 @@
 const EVENT_PARTICIPANTS_API_URL = "https://worker.statescloud.de/api/v1/data/event-participants.json?key=fmk_EQyxibxpvsjCeJKVjkr23K1aB34M6_6j&fields=memberName,member.status,note,member.field.passId,eventTitle,member.discordId,eventLogId,eventStartsAt&dateFormat=sheets&tz=Europe/Berlin";
 const PARTICIPATION_PAYOUT = 5000;
-const PERSON_BONUS = 500;
+const PERSON_BONUS = 2500;
 const API_PAGE_SIZE = 1000;
 const BERLIN_TIME_ZONE = "Europe/Berlin";
 const ACTIVE_MEMBER_STATUS = "active";
